@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Agenda Master</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 980px; margin: 24px auto; padding: 0 12px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    input, textarea, button { padding: 10px; font-size: 14px; }
+    input, textarea { width: 100%; box-sizing: border-box; }
+    button { cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; vertical-align: top; }
+    th { background: #f5f5f5; }
+    .card { border: 1px solid #ddd; padding: 12px; border-radius: 8px; margin-top: 12px; }
+    .muted { color: #666; }
+    .danger { background: #ffe8e8; border: 1px solid #ffbdbd; }
+    .ok { background: #eaffea; border: 1px solid #bff0bf; }
+  </style>
+</head>
+<body>
+  <h1>Agenda Master</h1>
+
+  <div id="msg" class="card" style="display:none;"></div>
+
+  <div class="card" id="authCard">
+    <h2>Login</h2>
+    <div class="row">
+      <div style="flex:1; min-width:260px;">
+        <label>Email</label>
+        <input id="email" type="email" placeholder="seuemail@exemplo.com" />
+      </div>
+      <div style="flex:1; min-width:260px;">
+        <label>Senha</label>
+        <input id="password" type="password" placeholder="********" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button id="btnSignUp">Criar conta</button>
+      <button id="btnSignIn">Entrar</button>
+      <button id="btnSignOut" style="display:none;">Sair</button>
+    </div>
+    <p class="muted">Dica: para testes, use email+senha. Depois dá pra trocar por link mágico se quiser.</p>
+  </div>
+
+  <div class="card" id="appCard" style="display:none;">
+    <div class="row" style="align-items:center; justify-content:space-between;">
+      <div>
+        <h2>Reservar horário</h2>
+        <div class="muted" id="userInfo"></div>
+      </div>
+      <div>
+        <button id="btnReload">Recarregar agenda</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div style="flex:1; min-width:260px;">
+        <label>Início (data/hora)</label>
+        <input id="start_at" type="datetime-local" />
+      </div>
+      <div style="flex:1; min-width:260px;">
+        <label>Fim (data/hora)</label>
+        <input id="end_at" type="datetime-local" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <div style="flex:1; min-width:260px;">
+        <label>Título</label>
+        <input id="title" type="text" placeholder="Consulta / Retorno / etc." />
+      </div>
+      <div style="flex:1; min-width:260px;">
+        <label>Detalhes</label>
+        <textarea id="details" rows="2" placeholder="Observações..."></textarea>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px;">
+      <button id="btnCreate">Reservar</button>
+      <button id="btnUpdate" disabled>Salvar edição</button>
+      <button id="btnCancelEdit" disabled>Cancelar edição</button>
+    </div>
+
+    <h2 style="margin-top:22px;">Agenda (Master)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Início</th>
+          <th>Fim</th>
+          <th>Título</th>
+          <th>Status</th>
+          <th>Criado por</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+
+    <p class="muted">
+      Regras: você vê tudo, mas só consegue editar/cancelar registros que você criou. Admin consegue tudo.
+    </p>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+    const SUPABASE_URL = "c52d8102-386f-4da1-a0ee-368da9929eba";
+    const SUPABASE_ANON_KEY = "sb_publishable_1nD8C1sjqWM6BPKnxymDIA_bE_tVg-q";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const el = (id) => document.getElementById(id);
+    const msg = (text, type="ok") => {
+      const box = el("msg");
+      box.className = "card " + (type === "danger" ? "danger" : "ok");
+      box.style.display = "block";
+      box.textContent = text;
+      setTimeout(() => box.style.display = "none", 4500);
+    };
+
+    let editingId = null;
+
+    function toISOFromLocal(dtLocal) {
+      // datetime-local vem sem timezone; vamos tratar como local e converter pra ISO
+      const d = new Date(dtLocal);
+      return d.toISOString();
+    }
+
+    function formatDate(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString();
+    }
+
+    async function refreshUserUI() {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (user) {
+        el("btnSignOut").style.display = "inline-block";
+        el("appCard").style.display = "block";
+        el("userInfo").textContent = `Logado como: ${user.email} | user_id: ${user.id}`;
+      } else {
+        el("btnSignOut").style.display = "none";
+        el("appCard").style.display = "none";
+        el("userInfo").textContent = "";
+      }
+    }
+
+    async function loadAppointments() {
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("id,start_at,end_at,title,details,status,created_by,created_at,updated_at")
+        .order("start_at", { ascending: true });
+
+      if (error) {
+        msg("Erro ao carregar agenda: " + error.message, "danger");
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      const tbody = el("tbody");
+      tbody.innerHTML = "";
+
+      data.forEach((a) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${formatDate(a.start_at)}</td>
+          <td>${formatDate(a.end_at)}</td>
+          <td><strong>${a.title}</strong><br/><span class="muted">${a.details ?? ""}</span></td>
+          <td>${a.status}</td>
+          <td><code>${a.created_by}</code></td>
+          <td></td>
+        `;
+
+        const tdActions = tr.querySelector("td:last-child");
+
+        const canEdit = user && (a.created_by === user.id); // admin também pode; mas a policy vai permitir mesmo assim
+        const btnEdit = document.createElement("button");
+        btnEdit.textContent = "Editar";
+        btnEdit.disabled = !user; // só logado
+        btnEdit.onclick = () => startEdit(a);
+
+        const btnCancel = document.createElement("button");
+        btnCancel.textContent = "Cancelar";
+        btnCancel.disabled = !user;
+        btnCancel.style.marginLeft = "8px";
+        btnCancel.onclick = () => cancelAppointment(a.id);
+
+        tdActions.appendChild(btnEdit);
+        tdActions.appendChild(btnCancel);
+
+        // Observação visual: se não for dono, ainda mostra botão mas a policy vai barrar.
+        // Se quiser, pode esconder quando não for dono.
+        // if (!canEdit) { btnEdit.style.display = "none"; btnCancel.style.display = "none"; }
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function startEdit(a) {
+      editingId = a.id;
+
+      // Preenche inputs com hora local
+      const start = new Date(a.start_at);
+      const end = new Date(a.end_at);
+
+      el("start_at").value = start.toISOString().slice(0,16);
+      el("end_at").value = end.toISOString().slice(0,16);
+      el("title").value = a.title;
+      el("details").value = a.details ?? "";
+
+      el("btnUpdate").disabled = false;
+      el("btnCancelEdit").disabled = false;
+      el("btnCreate").disabled = true;
+
+      msg("Editando reserva: " + a.id);
+    }
+
+    function stopEdit() {
+      editingId = null;
+      el("btnUpdate").disabled = true;
+      el("btnCancelEdit").disabled = true;
+      el("btnCreate").disabled = false;
+
+      el("start_at").value = "";
+      el("end_at").value = "";
+      el("title").value = "";
+      el("details").value = "";
+    }
+
+    async function createAppointment() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return msg("Faça login para reservar.", "danger");
+
+      const startLocal = el("start_at").value;
+      const endLocal = el("end_at").value;
+      const title = el("title").value.trim();
+      const details = el("details").value.trim();
+
+      if (!startLocal || !endLocal || !title) {
+        return msg("Preencha início, fim e título.", "danger");
+      }
+
+      const payload = {
+        start_at: toISOFromLocal(startLocal),
+        end_at: toISOFromLocal(endLocal),
+        title,
+        details: details || null,
+        status: "active",
+        created_by: user.id
+      };
+
+      const { error } = await supabase.from("appointments").insert(payload);
+      if (error) {
+        // Quando o horário já está ocupado, o índice único dispara erro
+        msg("Não foi possível reservar: " + error.message, "danger");
+        return;
+      }
+
+      msg("Reserva criada com sucesso!");
+      stopEdit();
+      await loadAppointments();
+    }
+
+    async function updateAppointment() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return msg("Faça login.", "danger");
+      if (!editingId) return;
+
+      const startLocal = el("start_at").value;
+      const endLocal = el("end_at").value;
+      const title = el("title").value.trim();
+      const details = el("details").value.trim();
+
+      if (!startLocal || !endLocal || !title) {
+        return msg("Preencha início, fim e título.", "danger");
+      }
+
+      const patch = {
+        start_at: toISOFromLocal(startLocal),
+        end_at: toISOFromLocal(endLocal),
+        title,
+        details: details || null
+      };
+
+      const { error } = await supabase
+        .from("appointments")
+        .update(patch)
+        .eq("id", editingId);
+
+      if (error) {
+        msg("Não foi possível editar: " + error.message, "danger");
+        return;
+      }
+
+      msg("Edição salva!");
+      stopEdit();
+      await loadAppointments();
+    }
+
+    async function cancelAppointment(id) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return msg("Faça login.", "danger");
+
+      const { error } = await supabase
+        .from("appointments")
+        .update({ status: "cancelled" })
+        .eq("id", id);
+
+      if (error) {
+        msg("Não foi possível cancelar: " + error.message, "danger");
+        return;
+      }
+
+      msg("Reserva cancelada!");
+      await loadAppointments();
+    }
+
+    // Auth handlers
+    el("btnSignUp").onclick = async () => {
+      const email = el("email").value.trim();
+      const password = el("password").value.trim();
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) return msg("Erro ao criar conta: " + error.message, "danger");
+      msg("Conta criada! Agora faça login.");
+    };
+
+    el("btnSignIn").onclick = async () => {
+      const email = el("email").value.trim();
+      const password = el("password").value.trim();
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return msg("Erro ao entrar: " + error.message, "danger");
+      msg("Logado!");
+      await refreshUserUI();
+      await loadAppointments();
+    };
+
+    el("btnSignOut").onclick = async () => {
+      await supabase.auth.signOut();
+      msg("Saiu da conta.");
+      stopEdit();
+      await refreshUserUI();
+    };
+
+    el("btnCreate").onclick = createAppointment;
+    el("btnUpdate").onclick = updateAppointment;
+    el("btnCancelEdit").onclick = () => { stopEdit(); msg("Edição cancelada."); };
+    el("btnReload").onclick = loadAppointments;
+
+    // Auto-init
+    supabase.auth.onAuthStateChange(async () => {
+      await refreshUserUI();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) await loadAppointments();
+    });
+
+    await refreshUserUI();
+  </script>
+</body>
+</html>
