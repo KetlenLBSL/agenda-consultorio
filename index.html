@@ -326,15 +326,18 @@
       msg("Conta criada! Agora faça login.");
     };
 
-    el("btnSignIn").onclick = async () => {
-      const email = el("email").value.trim();
-      const password = el("password").value.trim();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return msg("Erro ao entrar: " + error.message, "danger");
-      msg("Logado!");
-      await refreshUserUI();
-      await loadAppointments();
-    };
+  el("btnSignIn").onclick = async () => {
+  const email = el("email").value.trim();
+  const password = el("password").value.trim();
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error) return msg("Erro ao entrar: " + error.message, "danger");
+
+  msg("Logado!");
+  await refreshUserUI();
+  await loadAppointments();
+};
 
     el("btnSignOut").onclick = async () => {
       await supabase.auth.signOut();
@@ -350,7 +353,9 @@
 
     // Auto-init
     supabase.auth.onAuthStateChange(async () => {
-      await refreshUserUI();
+  await refreshUserUI();
+  await loadAppointments();
+});
       const { data: { user } } = await supabase.auth.getUser();
       if (user) await loadAppointments();
     });
@@ -360,4 +365,5 @@
 </body>
 
 </html>
+
 
