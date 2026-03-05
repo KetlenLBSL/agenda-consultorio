@@ -329,7 +329,9 @@
       if (error) return msg("Erro ao criar conta: " + error.message, "danger");
       msg("Conta criada! Agora faça login.");
     };
-
+document.getElementById("btnSignIn").innerText = "Entrar ✅";
+document.getElementById("btnSignUp").innerText = "Criar conta ✅";
+    
  el("btnSignIn").onclick = async () => {
   const email = el("email").value.trim();
   const password = el("password").value.trim();
@@ -377,6 +379,7 @@ if (session) {
 </body>
 
 </html>
+
 
 
 
