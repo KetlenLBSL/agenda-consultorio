@@ -332,16 +332,26 @@
 document.getElementById("btnSignIn").innerText = "Entrar ✅";
 document.getElementById("btnSignUp").innerText = "Criar conta ✅";
     
- el("btnSignIn").onclick = async () => {
-   msg("Cliquei em Entrar!");
-  const email = el("email").value.trim();
-  const password = el("password").value.trim();
+el("btnSignIn").onclick = async () => {
+  msg("Tentando entrar...");
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return msg("Erro ao entrar: " + error.message, "danger");
+  try {
+    const email = el("email").value.trim();
+    const password = el("password").value.trim();
 
-  msg("Logado!");
-  await afterLogin();
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      msg("Erro ao entrar: " + error.message, "danger");
+      return;
+    }
+
+    msg("Logado! Sessão: " + (data?.session ? "OK" : "SEM SESSÃO?"));
+    await refreshUserUI();
+    await loadAppointments();
+  } catch (e) {
+    msg("Falha inesperada no login: " + (e?.message || e), "danger");
+  }
 };
 
     el("btnSignOut").onclick = async () => {
@@ -371,6 +381,7 @@ if (session) {
   await loadAppointments();
 }
  
+
 
 
 
