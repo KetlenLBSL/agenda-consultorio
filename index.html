@@ -333,6 +333,7 @@ document.getElementById("btnSignIn").innerText = "Entrar ✅";
 document.getElementById("btnSignUp").innerText = "Criar conta ✅";
     
  el("btnSignIn").onclick = async () => {
+   msg("Cliquei em Entrar!");
   const email = el("email").value.trim();
   const password = el("password").value.trim();
 
@@ -379,6 +380,7 @@ if (session) {
 </body>
 
 </html>
+
 
 
 
