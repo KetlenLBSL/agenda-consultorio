@@ -370,16 +370,11 @@ const { data: { session } } = await supabase.auth.getSession();
 if (session) {
   await loadAppointments();
 }
-  const { data: { session } } = await supabase.auth.getSession();
-if (session) {
-  await afterLogin();
-} else {
-  await refreshUserUI();
-}
   </script>
 </body>
 
 </html>
+
 
 
 
