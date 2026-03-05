@@ -56,15 +56,15 @@
     </div>
 
     <div class="row">
-      <div style="flex:1; min-width:260px;">
-        <label>Início (data/hora)</label>
-        <input id="start_at" type="datetime-local" step="900" required />
-      ...
-      <div style="flex:1; min-width:260px;">
-        <label>Fim (data/hora)</label>
-        <input id="end_at" type="datetime-local" step="900" required />
-      </div>
-    </div>
+  <div style="flex:1; min-width:260px;">
+    <label>Início (data/hora)</label>
+    <input id="start_at" type="datetime-local" step="900" required />
+  </div>
+  <div style="flex:1; min-width:260px;">
+    <label>Fim (data/hora)</label>
+    <input id="end_at" type="datetime-local" step="900" required />
+  </div>
+</div>
 
     <div class="row" style="margin-top:10px;">
       <div style="flex:1; min-width:260px;">
@@ -254,6 +254,7 @@
   const user = await getCurrentUser();
   if (user) await loadAppointments();
 </script>
+
 
 
 
