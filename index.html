@@ -222,16 +222,36 @@
     msg("Conta criada! Agora clique em Entrar.");
   };
 
-  el("btnSignIn").onclick = async () => {
-    const email = el("email").value.trim();
-    const password = el("password").value.trim();
-    msg("Tentando entrar...");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  function withTimeout(promise, ms = 8000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout: login não respondeu (bloqueio de rede/extensão?)")), ms)
+    )
+  ]);
+}
+
+el("btnSignIn").onclick = async () => {
+  const email = el("email").value.trim();
+  const password = el("password").value.trim();
+
+  msg("Tentando entrar...");
+
+  try {
+    const { data, error } = await withTimeout(
+      supabase.auth.signInWithPassword({ email, password }),
+      8000
+    );
+
     if (error) return msg("Erro ao entrar: " + error.message, "danger");
-    msg("Logado!");
+
+    msg("Logado: " + (data?.user?.email ?? "OK"));
     await refreshUserUI();
     await loadAppointments();
-  };
+  } catch (e) {
+    msg("Falha no login: " + (e?.message || e), "danger");
+  }
+};
 
   el("btnSignOut").onclick = async () => {
     await supabase.auth.signOut();
@@ -254,6 +274,7 @@
   const user = await getCurrentUser();
   if (user) await loadAppointments();
 </script>
+
 
 
 
