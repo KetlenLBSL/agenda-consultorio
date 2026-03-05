@@ -353,14 +353,20 @@
     el("btnCancelEdit").onclick = () => { stopEdit(); msg("Edição cancelada."); };
     el("btnReload").onclick = loadAppointments;
 
-    // Auto-init
-   supabase.auth.onAuthStateChange(async (_event, session) => {
+// Inicialização automática (CORRETO)
+supabase.auth.onAuthStateChange(async (_event, session) => {
+  await refreshUserUI();
   if (session) {
-    await afterLogin();
-  } else {
-    await refreshUserUI();
+    await loadAppointments();
   }
 });
+
+// Ao abrir a página (CORRETO)
+await refreshUserUI();
+const { data: { session } } = await supabase.auth.getSession();
+if (session) {
+  await loadAppointments();
+}
   const { data: { session } } = await supabase.auth.getSession();
 if (session) {
   await afterLogin();
@@ -371,6 +377,7 @@ if (session) {
 </body>
 
 </html>
+
 
 
 
