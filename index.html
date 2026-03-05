@@ -109,30 +109,19 @@
   const SUPABASE_URL = "https://icbunyzsplbvepjrhsza.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_1nD8C1sjqWM6BPKnxymDIA_bE_tVg-q";
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      storageKey: "agenda-master-auth"
-    }
-  });
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const el = (id) => document.getElementById(id);
-
   const msg = (text, type = "ok") => {
     const box = el("msg");
     box.className = "card " + (type === "danger" ? "danger" : "ok");
     box.style.display = "block";
     box.textContent = text;
-    // deixa visível mais tempo pra você ver
     clearTimeout(window.__msgTimer);
     window.__msgTimer = setTimeout(() => (box.style.display = "none"), 8000);
   };
 
-  let editingId = null;
-
   function toISOFromLocal(dtLocal) {
-    // dtLocal: "2026-03-05T10:00"
     const d = new Date(dtLocal);
     return d.toISOString();
   }
@@ -149,7 +138,6 @@
 
   async function refreshUserUI() {
     const user = await getCurrentUser();
-
     if (user) {
       el("btnSignOut").style.display = "inline-block";
       el("appCard").style.display = "block";
@@ -167,15 +155,10 @@
       .select("id,start_at,end_at,title,details,status,created_by,created_at,updated_at")
       .order("start_at", { ascending: true });
 
-    if (error) {
-      msg("Erro ao carregar agenda: " + error.message, "danger");
-      return;
-    }
+    if (error) return msg("Erro ao carregar agenda: " + error.message, "danger");
 
-    const user = await getCurrentUser();
     const tbody = el("tbody");
     tbody.innerHTML = "";
-
     data.forEach((a) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -186,55 +169,20 @@
         <td><code>${a.created_by}</code></td>
         <td></td>
       `;
-
       const tdActions = tr.querySelector("td:last-child");
-
-      const btnEdit = document.createElement("button");
-      btnEdit.textContent = "Editar";
-      btnEdit.disabled = !user;
-      btnEdit.onclick = () => startEdit(a);
 
       const btnCancel = document.createElement("button");
       btnCancel.textContent = "Cancelar";
-      btnCancel.disabled = !user;
-      btnCancel.style.marginLeft = "8px";
-      btnCancel.onclick = () => cancelAppointment(a.id);
+      btnCancel.onclick = async () => {
+        const { error } = await supabase.from("appointments").update({ status: "cancelled" }).eq("id", a.id);
+        if (error) return msg("Não foi possível cancelar: " + error.message, "danger");
+        msg("Reserva cancelada!");
+        await loadAppointments();
+      };
 
-      tdActions.appendChild(btnEdit);
       tdActions.appendChild(btnCancel);
-
       tbody.appendChild(tr);
     });
-  }
-
-  function startEdit(a) {
-    editingId = a.id;
-
-    const start = new Date(a.start_at);
-    const end = new Date(a.end_at);
-
-    el("start_at").value = start.toISOString().slice(0, 16);
-    el("end_at").value = end.toISOString().slice(0, 16);
-    el("title").value = a.title;
-    el("details").value = a.details ?? "";
-
-    el("btnUpdate").disabled = false;
-    el("btnCancelEdit").disabled = false;
-    el("btnCreate").disabled = true;
-
-    msg("Editando reserva: " + a.id);
-  }
-
-  function stopEdit() {
-    editingId = null;
-    el("btnUpdate").disabled = true;
-    el("btnCancelEdit").disabled = true;
-    el("btnCreate").disabled = false;
-
-    el("start_at").value = "";
-    el("end_at").value = "";
-    el("title").value = "";
-    el("details").value = "";
   }
 
   async function createAppointment() {
@@ -246,9 +194,7 @@
     const title = el("title").value.trim();
     const details = el("details").value.trim();
 
-    if (!startLocal || !endLocal || !title) {
-      return msg("Preencha início, fim e título.", "danger");
-    }
+    if (!startLocal || !endLocal || !title) return msg("Preencha início, fim e título.", "danger");
 
     const payload = {
       start_at: toISOFromLocal(startLocal),
@@ -263,73 +209,26 @@
     if (error) return msg("Não foi possível reservar: " + error.message, "danger");
 
     msg("Reserva criada com sucesso!");
-    stopEdit();
     await loadAppointments();
   }
 
-  async function updateAppointment() {
-    const user = await getCurrentUser();
-    if (!user) return msg("Faça login.", "danger");
-    if (!editingId) return;
-
-    const startLocal = el("start_at").value;
-    const endLocal = el("end_at").value;
-    const title = el("title").value.trim();
-    const details = el("details").value.trim();
-
-    if (!startLocal || !endLocal || !title) {
-      return msg("Preencha início, fim e título.", "danger");
-    }
-
-    const patch = {
-      start_at: toISOFromLocal(startLocal),
-      end_at: toISOFromLocal(endLocal),
-      title,
-      details: details || null
-    };
-
-    const { error } = await supabase.from("appointments").update(patch).eq("id", editingId);
-    if (error) return msg("Não foi possível editar: " + error.message, "danger");
-
-    msg("Edição salva!");
-    stopEdit();
-    await loadAppointments();
-  }
-
-  async function cancelAppointment(id) {
-    const user = await getCurrentUser();
-    if (!user) return msg("Faça login.", "danger");
-
-    const { error } = await supabase.from("appointments").update({ status: "cancelled" }).eq("id", id);
-    if (error) return msg("Não foi possível cancelar: " + error.message, "danger");
-
-    msg("Reserva cancelada!");
-    await loadAppointments();
-  }
-
-  // Auth handlers
+  // Auth
   el("btnSignUp").onclick = async () => {
     const email = el("email").value.trim();
     const password = el("password").value.trim();
-
     msg("Criando conta...");
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) return msg("Erro ao criar conta: " + error.message, "danger");
-
     msg("Conta criada! Agora clique em Entrar.");
   };
 
   el("btnSignIn").onclick = async () => {
     const email = el("email").value.trim();
     const password = el("password").value.trim();
-
     msg("Tentando entrar...");
-
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return msg("Erro ao entrar: " + error.message, "danger");
-
-    // usa a sessão retornada (mais confiável)
-    msg("Logado: " + (data?.user?.email ?? "OK"));
+    msg("Logado!");
     await refreshUserUI();
     await loadAppointments();
   };
@@ -337,17 +236,14 @@
   el("btnSignOut").onclick = async () => {
     await supabase.auth.signOut();
     msg("Saiu da conta.");
-    stopEdit();
     await refreshUserUI();
   };
 
-  // App buttons
+  // App
   el("btnCreate").onclick = createAppointment;
-  el("btnUpdate").onclick = updateAppointment;
-  el("btnCancelEdit").onclick = () => { stopEdit(); msg("Edição cancelada."); };
   el("btnReload").onclick = loadAppointments;
 
-  // Inicialização
+  // Init
   supabase.auth.onAuthStateChange(async () => {
     await refreshUserUI();
     const user = await getCurrentUser();
@@ -359,267 +255,7 @@
   if (user) await loadAppointments();
 </script>
 
-    let editingId = null;
-    async function afterLogin() {
-  await refreshUserUI();
-  await loadAppointments();
-}
 
-    function toISOFromLocal(dtLocal) {
-      // datetime-local vem sem timezone; vamos tratar como local e converter pra ISO
-      const d = new Date(dtLocal);
-      return d.toISOString();
-    }
-
-    function formatDate(iso) {
-      const d = new Date(iso);
-      return d.toLocaleString();
-    }
-
-    async function refreshUserUI() {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (user) {
-        el("btnSignOut").style.display = "inline-block";
-        el("appCard").style.display = "block";
-        el("userInfo").textContent = `Logado como: ${user.email} | user_id: ${user.id}`;
-      } else {
-        el("btnSignOut").style.display = "none";
-        el("appCard").style.display = "none";
-        el("userInfo").textContent = "";
-      }
-    }
-
-    async function loadAppointments() {
-      const { data, error } = await supabase
-        .from("appointments")
-        .select("id,start_at,end_at,title,details,status,created_by,created_at,updated_at")
-        .order("start_at", { ascending: true });
-
-      if (error) {
-        msg("Erro ao carregar agenda: " + error.message, "danger");
-        return;
-      }
-
-      const { data: { user } } = await supabase.auth.getUser();
-      const tbody = el("tbody");
-      tbody.innerHTML = "";
-
-      data.forEach((a) => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${formatDate(a.start_at)}</td>
-          <td>${formatDate(a.end_at)}</td>
-          <td><strong>${a.title}</strong><br/><span class="muted">${a.details ?? ""}</span></td>
-          <td>${a.status}</td>
-          <td><code>${a.created_by}</code></td>
-          <td></td>
-        `;
-
-        const tdActions = tr.querySelector("td:last-child");
-
-        const canEdit = user && (a.created_by === user.id); // admin também pode; mas a policy vai permitir mesmo assim
-        const btnEdit = document.createElement("button");
-        btnEdit.textContent = "Editar";
-        btnEdit.disabled = !user; // só logado
-        btnEdit.onclick = () => startEdit(a);
-
-        const btnCancel = document.createElement("button");
-        btnCancel.textContent = "Cancelar";
-        btnCancel.disabled = !user;
-        btnCancel.style.marginLeft = "8px";
-        btnCancel.onclick = () => cancelAppointment(a.id);
-
-        tdActions.appendChild(btnEdit);
-        tdActions.appendChild(btnCancel);
-
-        // Observação visual: se não for dono, ainda mostra botão mas a policy vai barrar.
-        // Se quiser, pode esconder quando não for dono.
-        // if (!canEdit) { btnEdit.style.display = "none"; btnCancel.style.display = "none"; }
-
-        tbody.appendChild(tr);
-      });
-    }
-
-    function startEdit(a) {
-      editingId = a.id;
-
-      // Preenche inputs com hora local
-      const start = new Date(a.start_at);
-      const end = new Date(a.end_at);
-
-      el("start_at").value = start.toISOString().slice(0,16);
-      el("end_at").value = end.toISOString().slice(0,16);
-      el("title").value = a.title;
-      el("details").value = a.details ?? "";
-
-      el("btnUpdate").disabled = false;
-      el("btnCancelEdit").disabled = false;
-      el("btnCreate").disabled = true;
-
-      msg("Editando reserva: " + a.id);
-    }
-
-    function stopEdit() {
-      editingId = null;
-      el("btnUpdate").disabled = true;
-      el("btnCancelEdit").disabled = true;
-      el("btnCreate").disabled = false;
-
-      el("start_at").value = "";
-      el("end_at").value = "";
-      el("title").value = "";
-      el("details").value = "";
-    }
-
-    async function createAppointment() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return msg("Faça login para reservar.", "danger");
-
-      const startLocal = el("start_at").value;
-      const endLocal = el("end_at").value;
-      const title = el("title").value.trim();
-      const details = el("details").value.trim();
-
-      if (!startLocal || !endLocal || !title) {
-        return msg("Preencha início, fim e título.", "danger");
-      }
-
-      const payload = {
-        start_at: toISOFromLocal(startLocal),
-        end_at: toISOFromLocal(endLocal),
-        title,
-        details: details || null,
-        status: "active",
-        created_by: user.id
-      };
-
-      const { error } = await supabase.from("appointments").insert(payload);
-      if (error) {
-        // Quando o horário já está ocupado, o índice único dispara erro
-        msg("Não foi possível reservar: " + error.message, "danger");
-        return;
-      }
-
-      msg("Reserva criada com sucesso!");
-      stopEdit();
-      await loadAppointments();
-    }
-
-    async function updateAppointment() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return msg("Faça login.", "danger");
-      if (!editingId) return;
-
-      const startLocal = el("start_at").value;
-      const endLocal = el("end_at").value;
-      const title = el("title").value.trim();
-      const details = el("details").value.trim();
-
-      if (!startLocal || !endLocal || !title) {
-        return msg("Preencha início, fim e título.", "danger");
-      }
-
-      const patch = {
-        start_at: toISOFromLocal(startLocal),
-        end_at: toISOFromLocal(endLocal),
-        title,
-        details: details || null
-      };
-
-      const { error } = await supabase
-        .from("appointments")
-        .update(patch)
-        .eq("id", editingId);
-
-      if (error) {
-        msg("Não foi possível editar: " + error.message, "danger");
-        return;
-      }
-
-      msg("Edição salva!");
-      stopEdit();
-      await loadAppointments();
-    }
-
-    async function cancelAppointment(id) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return msg("Faça login.", "danger");
-
-      const { error } = await supabase
-        .from("appointments")
-        .update({ status: "cancelled" })
-        .eq("id", id);
-
-      if (error) {
-        msg("Não foi possível cancelar: " + error.message, "danger");
-        return;
-      }
-
-      msg("Reserva cancelada!");
-      await loadAppointments();
-    }
-
-    // Auth handlers
-    el("btnSignUp").onclick = async () => {
-      const email = el("email").value.trim();
-      const password = el("password").value.trim();
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) return msg("Erro ao criar conta: " + error.message, "danger");
-      msg("Conta criada! Agora faça login.");
-    };
-document.getElementById("btnSignIn").innerText = "Entrar ✅";
-document.getElementById("btnSignUp").innerText = "Criar conta ✅";
-    
-el("btnSignIn").onclick = async () => {
-  msg("Tentando entrar...");
-
-  try {
-    const email = el("email").value.trim();
-    const password = el("password").value.trim();
-
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (error) {
-      msg("Erro ao entrar: " + error.message, "danger");
-      return;
-    }
-
-    msg("Logado! Sessão: " + (data?.session ? "OK" : "SEM SESSÃO?"));
-    await refreshUserUI();
-    await loadAppointments();
-  } catch (e) {
-    msg("Falha inesperada no login: " + (e?.message || e), "danger");
-  }
-};
-
-    el("btnSignOut").onclick = async () => {
-      await supabase.auth.signOut();
-      msg("Saiu da conta.");
-      stopEdit();
-      await refreshUserUI();
-    };
-
-    el("btnCreate").onclick = createAppointment;
-    el("btnUpdate").onclick = updateAppointment;
-    el("btnCancelEdit").onclick = () => { stopEdit(); msg("Edição cancelada."); };
-    el("btnReload").onclick = loadAppointments;
-
-// Inicialização automática (CORRETO)
-supabase.auth.onAuthStateChange(async (_event, session) => {
-  await refreshUserUI();
-  if (session) {
-    await loadAppointments();
-  }
-});
-
-// Ao abrir a página (CORRETO)
-await refreshUserUI();
-const { data: { session } } = await supabase.auth.getSession();
-if (session) {
-  await loadAppointments();
-}
- </script>
 
 
 
