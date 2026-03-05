@@ -121,6 +121,10 @@
     };
 
     let editingId = null;
+    async function afterLogin() {
+  await refreshUserUI();
+  await loadAppointments();
+}
 
     function toISOFromLocal(dtLocal) {
       // datetime-local vem sem timezone; vamos tratar como local e converter pra ISO
@@ -326,17 +330,15 @@
       msg("Conta criada! Agora faça login.");
     };
 
-  el("btnSignIn").onclick = async () => {
+ el("btnSignIn").onclick = async () => {
   const email = el("email").value.trim();
   const password = el("password").value.trim();
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-
   if (error) return msg("Erro ao entrar: " + error.message, "danger");
 
   msg("Logado!");
-  await refreshUserUI();
-  await loadAppointments();
+  await afterLogin();
 };
 
     el("btnSignOut").onclick = async () => {
@@ -352,18 +354,23 @@
     el("btnReload").onclick = loadAppointments;
 
     // Auto-init
-    supabase.auth.onAuthStateChange(async () => {
-  await refreshUserUI();
-  await loadAppointments();
-});
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) await loadAppointments();
-    });
-
+   supabase.auth.onAuthStateChange(async (_event, session) => {
+  if (session) {
+    await afterLogin();
+  } else {
     await refreshUserUI();
+  }
+});
+  const { data: { session } } = await supabase.auth.getSession();
+if (session) {
+  await afterLogin();
+} else {
+  await refreshUserUI();
+}
   </script>
 </body>
 
 </html>
+
 
 
